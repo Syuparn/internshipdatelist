@@ -1,9 +1,11 @@
 import re
+import sys
 from time import sleep
 import urllib
 import pandas as pd
 from bs4 import BeautifulSoup
 
+#TODO; なんかzipかみ合ってない気がする(deadlineが１記事に１つしかないから？)
 
 def parse_company_urls(html):
     soup = BeautifulSoup(html, 'lxml')
@@ -22,25 +24,40 @@ def fetch_intern_dates(pageDict):
         # empty list
         return interns
     soup = BeautifulSoup(html, 'lxml')
-    internDivs = soup.div(class_='ts-p-_internshipList-item-info')
 
+    # list of internship divs
+    internDivs = soup.div(class_='ts-p-_internshipList-item-info')
     prefix = 'ts-p-_internshipList-item-info-row-'
     titleClassName = prefix + 'title'
     daysClassName = ' '.join([prefix+'detail-text', prefix+'detail-text_day'])
     dateClassName = ' '.join([prefix+'detail-text', prefix+'detail-text_place'])
 
-    for div in internDivs:
+    # list of deadline divs
+    deadlineDivs = soup.div(class_='ts-p-_internshipList-item-entry js-p-entryItem-empty')
+    deadlineClassName = 'ts-p-_internshipList-item-entry-deadline'
+
+    for iDiv, dDiv in zip(internDivs, deadlineDivs):
         intern = {'company': pageDict['company'],
-                  'title': div.div()[0].text,
-                  'days': div.find_all('div', class_=daysClassName)[0].text,
-                  'date': div.find_all('div', class_=dateClassName)[0].text}
+                  'title': iDiv.div()[0].text,
+                  'days': iDiv.find_all('div', class_=daysClassName)[0].text,
+                  'date': iDiv.find_all('div', class_=dateClassName)[0].text}
+        intern['deadline'] = re.sub(
+            'エントリー締切：', '', dDiv.find_all('div', class_=deadlineClassName)[0].text)
         interns.append(intern)
 
     return interns
 
 
+def to_internship_url(companyUrl, urlPattern=re.compile(r'\?clk=.*')):
+    # change url of each company page to that of its internship page
+    # '.../?clk=...' to '.../internship/'
+    internshipUrl = urlPattern.sub('internship/', companyUrl)
+    # return full-path url
+    return 'https://job.rikunabi.com' + internshipUrl
+
+
 if __name__ == '__main__':
-    htmlName = 'rikunabi.html'
+    htmlName = sys.argv[1] if len(sys.argv) > 1 else 'rikunabi.html'
 
     # read page of my favorite company list (already downloaded to local)
     with open(htmlName, 'r', encoding='utf-8') as f:
@@ -48,12 +65,9 @@ if __name__ == '__main__':
 
     # pick up urls of each favorite company
     pages = parse_company_urls(html)
-    urlPattern = re.compile(r'\?clk=.*')
-    # change each url to that of its internship page
-    # '.../?clk=...' to '.../internship/'
     internPages = [{'company': page['company'],
-                    'url': urlPattern.sub('internship/', page['url'])} 
-                    for page in pages]
+                    'url': to_internship_url(page['url'])} 
+                   for page in pages]
 
     # fetch dates of internships from each internship page
     interns = []
